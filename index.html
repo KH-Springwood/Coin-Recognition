@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Coin Recognition Quiz (Image-based)</title>
+<style>
+  html, body {
+    height: 100%;
+    margin: 0;
+    background: linear-gradient(135deg,#8ec5fc,#e0c3fc);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: Poppins, Arial, Helvetica, sans-serif;
+    overflow: hidden;
+  }
+
+  #game {
+    width: 95vw;
+    height: 95vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    position: relative; /* needed for absolute positioning of celebration */
+  }
+
+  h1 {
+    font-size: 5vw;
+    color: #222;
+    margin: 0 0 3vh 0;
+    text-shadow: 0 1px 0 #fff;
+  }
+
+  #coins {
+    width: 100%;
+    flex: 1;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 12vw;
+  }
+
+  img.coin-img {
+    border-radius: 50%;
+    cursor: pointer;
+    box-shadow: 0 8px 18px rgba(0,0,0,0.25);
+    transition: transform .18s, box-shadow .18s;
+  }
+
+  img.coin-img:hover {
+    transform: scale(1.08);
+    box-shadow: 0 12px 28px rgba(0,0,0,0.28);
+  }
+
+  #message {
+    font-size: 3vw;
+    margin-top: 3vh;
+    color: #222;
+    font-weight: 700;
+  }
+
+  /* CELEBRATION GIF - ABSOLUTE CENTERED */
+  #celebration {
+    display: none;           /* hidden by default */
+    position: absolute;      /* overlay inside #game */
+    top: 60%;                /* slightly below center to leave space for text */
+    left: 50%;               /* horizontal center */
+    transform: translate(-50%, -50%); /* center at top/left */
+    z-index: 10;
+  }
+
+  #celebration img {
+    width: 50vmin;           /* large but not fullscreen */
+    height: auto;
+    max-height: 40vh;        /* ensures it doesn’t cover text */
+  }
+
+  canvas#confetti {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    z-index: 2;
+  }
+</style>
+</head>
+<body>
+
+<div id="game">
+  <h1 id="question">Find the 2p coin</h1>
+  <div id="coins"></div>
+  <div id="message"></div>
+  <div id="celebration"><img src="https://i.giphy.com/Yl8Rtxm8yAlTqDpM8Y.webp" alt="celebration" /></div>
+</div>
+
+<canvas id="confetti"></canvas>
+
+<script>
+const coinsList = [
+  { id: '1p', img: 'images/1p.png', label: '1p', scale: 1.00 },
+  { id: '2p', img: 'images/2p.png', label: '2p', scale: 1.28 },
+  { id: '5p', img: 'images/5p.png', label: '5p', scale: 0.89 },
+  { id: '10p', img: 'images/10p.png', label: '10p', scale: 1.21 },
+  { id: '20p', img: 'images/20p.png', label: '20p', scale: 1.05 },
+  { id: '50p', img: 'images/50p.png', label: '50p', scale: 1.35 },
+  { id: '£1', img: 'images/1gb.png', label: '£1', scale: 1.13 },
+  { id: '£2', img: 'images/2gb.png', label: '£2', scale: 1.40 }
+];
+
+let currentQuestion = 0;
+const totalQuestions = 12;
+const questionEl = document.getElementById('question');
+const coinsContainer = document.getElementById('coins');
+const messageEl = document.getElementById('message');
+const celebrationEl = document.getElementById('celebration');
+
+const canvas = document.getElementById('confetti');
+const ctx = canvas.getContext('2d');
+canvas.width = innerWidth;
+canvas.height = innerHeight;
+
+let confettiPieces = [];
+let confettiAnimId;
+let endless = false;
+
+function playSound(src){
+  const s = new Audio(src);
+  s.play().catch(()=>{});
+}
+
+function randomCoinExclude(excludeId){
+  const pool = coinsList.filter(c => c.id !== excludeId);
+  return pool[Math.floor(Math.random()*pool.length)];
+}
+
+function makeCoinNode(coin){
+  const wrapper = document.createElement('div');
+  wrapper.style.display = 'flex';
+  wrapper.style.flexDirection = 'column';
+  wrapper.style.alignItems = 'center';
+
+  const img = document.createElement('img');
+  img.src = coin.img;
+  img.alt = coin.label;
+  img.className = 'coin-img';
+
+  const baseSize = 25;
+  const scaledSize = baseSize * 2 * coin.scale;
+  img.style.width = `${scaledSize}vmin`;
+  img.style.height = `${scaledSize}vmin`;
+
+  wrapper.appendChild(img);
+  return { wrapper, coinEl: img };
+}
+
+function newQuestion(){
+  messageEl.textContent = '';
+  celebrationEl.style.display = 'none';
+  if(currentQuestion >= totalQuestions){
+    questionEl.textContent = '🎉 You finished the quiz!';
+    coinsContainer.innerHTML = '';
+    celebrationEl.style.display = 'flex';  // show celebration
+    startConfetti(true);
+    return;
+  }
+
+  const correct = coinsList[Math.floor(Math.random()*coinsList.length)];
+  const wrong = randomCoinExclude(correct.id);
+  const correctOnLeft = Math.random() < 0.5;
+
+  questionEl.textContent = `Find the ${correct.id} coin`;
+  coinsContainer.innerHTML = '';
+
+  const leftData = correctOnLeft ? correct : wrong;
+  const rightData = correctOnLeft ? wrong : correct;
+
+  const leftNode = makeCoinNode(leftData);
+  const rightNode = makeCoinNode(rightData);
+
+  leftNode.coinEl.addEventListener('click', () => checkAnswer(leftData.id === correct.id));
+  rightNode.coinEl.addEventListener('click', () => checkAnswer(rightData.id === correct.id));
+
+  coinsContainer.appendChild(leftNode.wrapper);
+  coinsContainer.appendChild(rightNode.wrapper);
+}
+
+function checkAnswer(isCorrect){
+  if(isCorrect){
+    playSound('https://actions.google.com/sounds/v1/cartoon/clang_and_wobble.ogg');
+    messageEl.textContent = '✅ Correct!';
+    startConfetti(false);
+    setTimeout(()=>{
+      if(!endless) stopConfetti();
+      currentQuestion++;
+      newQuestion();
+    },1500);
+  } else {
+    playSound('https://actions.google.com/sounds/v1/cartoon/wood_plank_flicks.ogg');
+    messageEl.textContent = '❌ Oops! Try again!';
+  }
+}
+
+function startConfetti(loopForever=false){
+  endless = loopForever;
+  confettiPieces = [];
+  for(let i=0;i<150;i++){
+    confettiPieces.push({
+      x: Math.random()*canvas.width,
+      y: Math.random()*canvas.height,
+      r: (Math.random()*6+2)*2,
+      d: Math.random()*10,
+      color: `hsl(${Math.random()*360},100%,60%)`,
+      tilt: Math.random()*10-10
+    });
+  }
+  if(confettiAnimId) cancelAnimationFrame(confettiAnimId);
+  (function draw(){
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+    confettiPieces.forEach(p=>{
+      ctx.beginPath();
+      ctx.fillStyle=p.color;
+      ctx.ellipse(p.x,p.y,p.r,p.r/2,p.tilt,0,Math.PI*2);
+      ctx.fill();
+      p.y += Math.random()*4 + 2;
+      p.x += Math.sin(p.d);
+      if(p.y > canvas.height) p.y = 0;
+    });
+    confettiAnimId = requestAnimationFrame(draw);
+  })();
+}
+
+function stopConfetti(){
+  confettiPieces = [];
+  if(confettiAnimId) cancelAnimationFrame(confettiAnimId);
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+}
+
+window.addEventListener('resize', ()=>{
+  canvas.width = innerWidth;
+  canvas.height = innerHeight;
+  newQuestion();
+});
+
+newQuestion();
+</script>
+</body>
+</html>
